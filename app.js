@@ -10,6 +10,7 @@
   let firstRender = true;
   let skillInfo = new Map();
   let pendingSkillsPair = null;
+  let skillsDialogPairId = null;
   let query = "";
 
   const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -18,8 +19,8 @@
 
   function summarizeSkills(items) {
     const total = items.length;
-    const active = items.filter(item => /quản lý/.test(item.state || "")).length;
-    const kept = items.filter(item => /giữ nguyên/.test(item.state || "")).length;
+    const active = items.filter(item => typeof item.enabled === "boolean" ? item.enabled : /quản lý/.test(item.state || "")).length;
+    const kept = items.filter(item => item.status === "kept" || /giữ nguyên/.test(item.state || "")).length;
     return { total, active, kept };
   }
 
@@ -106,11 +107,13 @@
   }
 
   function closeDialog() {
+    skillsDialogPairId = null;
     overlay.hidden = true;
     dialogElement.replaceChildren();
   }
 
   function openDialog(title, body, dialogClass = "") {
+    skillsDialogPairId = null;
     dialogElement.className = `dialog ${dialogClass}`.trim();
     dialogElement.innerHTML = `
       <div class="dialog-head"><h2 id="dialog-title">${escapeHtml(title)}</h2>
@@ -136,17 +139,21 @@
 
   function showSkills(pair, items) {
     const states = new Map([
-      ["Junction do ứng dụng quản lý", { label: "Đã liên kết", className: "linked" }],
-      ["Chưa liên kết", { label: "Chưa liên kết", className: "unlinked" }],
-      ["Đích đã có sẵn · giữ nguyên", { label: "Giữ nguyên", className: "kept" }]
+      ["linked", { label: "Đã liên kết", className: "linked" }],
+      ["unlinked", { label: "Chưa liên kết", className: "unlinked" }],
+      ["kept", { label: "Giữ nguyên", className: "kept" }]
     ]);
     const sortedItems = [...items].sort((a, b) => String(a.name ?? "").localeCompare(
       String(b.name ?? ""), "vi", { sensitivity: "base", numeric: true }
     ));
     const rows = sortedItems.map(item => {
-      const state = states.get(item.state) ?? { label: item.state || "Không rõ", className: "unknown" };
+      const state = states.get(item.status) ?? { label: item.state || "Không rõ", className: "unknown" };
       return `<li class="skill-row"><span class="skill-name">${escapeHtml(item.name)}</span>
-        <span class="skill-state ${state.className}">${escapeHtml(state.label)}</span></li>`;
+        <div class="skill-controls"><span class="skill-state ${state.className}">${escapeHtml(state.label)}</span>
+          <button class="switch" type="button" role="switch" aria-label="Junction skill ${escapeHtml(item.name)}"
+            aria-checked="${item.enabled === true}" data-action="toggle-skill" data-id="${escapeHtml(pair.id)}"
+            data-skill="${escapeHtml(item.name)}" ${item.canToggle === true ? "" : "disabled"}></button>
+        </div></li>`;
     }).join("");
     openDialog(`Skills · ${pair.name}`, `
       <div class="skills-context">
@@ -156,10 +163,12 @@
       <div class="skills-scroll" tabindex="0" role="region" aria-label="Danh sách Skills">
         ${items.length ? `<ul class="skill-list">${rows}</ul>` : '<p class="skills-empty dialog-copy">Không tìm thấy thư mục Skills con.</p>'}
       </div>
+      <p class="form-error skills-error" id="skills-error" role="alert" hidden></p>
       <div class="dialog-foot">
-        <p class="skills-note">Đã liên kết: Junction do ứng dụng quản lý.<br>Giữ nguyên: mục có sẵn ở đích.</p>
+        <p class="skills-note">Tắt: gỡ Junction riêng và ghi nhớ lựa chọn.<br>Giữ nguyên: mục có sẵn ở đích.</p>
         <button class="button primary" type="button" data-action="close">Đóng</button>
       </div>`, "skills-dialog");
+    skillsDialogPairId = pair.id;
   }
 
   function setPairs(nextPairs) {
@@ -230,6 +239,24 @@
         pendingSkillsPair = id;
         await request("skills", { id });
       }
+      else if (action === "toggle-skill" && pair) {
+        const skill = button.dataset.skill;
+        const scrollTop = $(".skills-scroll", dialogElement).scrollTop;
+        const controls = [...dialogElement.querySelectorAll('[data-action="toggle-skill"]:not(:disabled)')];
+        controls.forEach(control => { control.disabled = true; });
+        $("#skills-error").hidden = true;
+        try {
+          const result = await request("toggle-skill", { id, skill, enabled: button.getAttribute("aria-checked") !== "true" });
+          if (skillsDialogPairId === id && !overlay.hidden) {
+            showSkills(pair, result.skills);
+            $(".skills-scroll", dialogElement).scrollTop = scrollTop;
+            const nextButton = [...dialogElement.querySelectorAll('[data-action="toggle-skill"]')].find(control => control.dataset.skill === skill);
+            nextButton?.focus({ preventScroll: true });
+          }
+        } finally {
+          controls.forEach(control => { control.disabled = false; });
+        }
+      }
       else if (action === "copy-path") {
         const text = button.dataset.path || "";
         let copied = false;
@@ -258,6 +285,12 @@
     } catch (error) {
       button.disabled = false;
       setNotice(error.message, true);
+      if (action === "toggle-skill" && skillsDialogPairId === id) {
+        const errorElement = $("#skills-error");
+        errorElement.textContent = error.message;
+        errorElement.hidden = false;
+        button.focus({ preventScroll: true });
+      }
     }
   });
 
