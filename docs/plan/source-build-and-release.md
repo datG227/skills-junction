@@ -1,6 +1,6 @@
 # Source Build and Release Implementation Plan
 
-> **For agentic workers:** REQUIRED EXECUTION METHOD: Use subagents (recommended) or the executing-plans skill to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED EXECUTION METHOD: Use subagents (recommended) or the executing-plans skill to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** A source-only repository that builds the current Windows app, verifies it, and produces downloadable tag releases.
 
@@ -23,10 +23,10 @@
 
 **Interfaces:** `BackendProcess.Start()`, `Task SendAsync(string json)`, response/exit events, `Dispose()`; output `SkillsJunction.WebView2.exe` with `web/` and `backend/` content.
 
-- [ ] Move existing web/backend source without behavior changes and update the Python script path.
-- [ ] Add native desktop integration tests before implementing the new host. Confirm they fail because the source-built executable does not yet exist.
-- [ ] Reconstruct the host using the inspected binary behavior and documented WebView2 initialization/messaging. Pin the same WebView2 package in the project.
-- [ ] Restore and publish with:
+- [x] Move existing web/backend source without behavior changes and update the Python script path.
+- [x] Add native desktop integration tests before implementing the new host. Confirm they fail because the source-built executable does not yet exist.
+- [x] Reconstruct the host using the inspected binary behavior and documented WebView2 initialization/messaging. Pin the same WebView2 package in the project.
+- [x] Restore and publish with:
 
   ```powershell
   dotnet restore src/SkillsJunction.Desktop/SkillsJunction.Desktop.csproj --locked-mode
@@ -35,7 +35,7 @@
   npm run test:desktop
   ```
 
-- [ ] Remove tracked imported binaries only after the source build and desktop tests pass.
+- [x] Remove tracked imported binaries only after the source build and desktop tests pass.
 
 ### Task 2: Repeatable build and ZIP package
 
@@ -43,9 +43,9 @@
 
 **Interfaces:** build outputs `artifacts/publish`; package accepts a semantic version and writes `artifacts/releases/SkillsJunction-v<version>-win-x64.zip` plus `SHA256SUMS.txt`.
 
-- [ ] Test package contents against a temporary publish folder: required host/web/backend files included; no profile/config/log/test content; hash matches ZIP.
-- [ ] Implement guarded output paths, fail on command errors, and share the published-folder contract with desktop tests.
-- [ ] Run:
+- [x] Test package contents against a temporary publish folder: required host/web/backend files included; no profile/config/log/test content; hash matches ZIP.
+- [x] Implement guarded output paths, fail on command errors, and share the published-folder contract with desktop tests.
+- [x] Run:
 
   ```powershell
   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1
@@ -58,15 +58,15 @@
 
 **Files:** `README.md`, `docs/development.md`, `.github/workflows/ci.yml` (verification and gated tag release jobs), `.github/dependabot.yml`, `.github/PULL_REQUEST_TEMPLATE.md`.
 
-- [ ] Document download/run requirements, screenshot, source build, tests, ZIP creation, and tag release behavior. Record host reconstruction provenance honestly.
-- [ ] Configure PR/main CI for locked restores, syntax checks, backend tests, build/publish, desktop tests, packaging, and artifact upload.
-- [ ] Configure tag releases with the same gates and `contents: write` only in the release job. Use official actions pinned to their verified version SHAs.
-- [ ] Add lockfile/dependency update configuration and a focused PR template.
+- [x] Document download/run requirements, screenshot, source build, tests, ZIP creation, and tag release behavior. Record host reconstruction provenance honestly.
+- [x] Configure PR/main CI for locked restores, syntax checks, backend tests, build/publish, desktop tests, packaging, and artifact upload.
+- [x] Configure tag releases with the same gates and `contents: write` only in the release job. Use official actions pinned to their verified version SHAs.
+- [x] Add lockfile/dependency update configuration and a focused PR template.
 
 ### Task 4: Clean checkout verification and review
 
-- [ ] Build and run tests from a fresh source checkout with no imported binaries available.
-- [ ] Confirm no EXE/DLL/PDB/generated runtime metadata is tracked in the branch.
-- [ ] Request read-only code review, address material findings, and run affected checks again.
+- [x] Build and run tests from a fresh source checkout with no imported binaries available.
+- [x] Confirm no EXE/DLL/PDB/generated runtime metadata is tracked in the branch.
+- [x] Request read-only code review, address material findings, and run affected checks again.
 - [ ] Push branch, open a PR against main, wait for its actual GitHub CI result, and fix failures.
 - [ ] Report the PR, checks actually completed, and the local source-built executable. Leave merge and creation of a new public tag for the user's next instruction.

@@ -49,7 +49,7 @@ Kết quả nằm ở `artifacts/releases/SkillsJunction-v1.0.1-win-x64.zip` và
 
 ## GitHub Actions và phát hành
 
-PR và nhánh `main` chạy cùng quy trình Windows: cài dependency theo lockfile, kiểm tra backend/package, build, kiểm tra định dạng, mở EXE thật và tạo ZIP. ZIP của CI được lưu ở mục Artifacts trong lần chạy workflow.
+PR và nhánh `main` chạy cùng quy trình Windows: cài dependency theo lockfile, kiểm tra backend/package, build, kiểm tra định dạng, tạo ZIP, giải nén rồi mở EXE thật từ gói đó. ZIP của CI được lưu ở mục Artifacts trong lần chạy workflow.
 
 Sau khi PR đã merge và sẵn sàng phát hành phiên bản mới:
 
@@ -62,7 +62,7 @@ git push origin v1.0.1
 
 Tag chạy lại đầy đủ các bước kiểm tra. Chỉ khi đạt, job `release` nhận quyền `contents: write`, tải artifact đã kiểm tra, xác nhận SHA-256 rồi tạo GitHub Release với ZIP và checksum. Các job kiểm tra chỉ có quyền đọc. Actions được ghim theo commit SHA và Dependabot đề xuất cập nhật hằng tuần.
 
-Quy trình không ghi đè release có sẵn. Tag và tài sản `v1.0.0` được giữ nguyên; nếu cần sửa một phiên bản đã công bố, tạo phiên bản tiếp theo. Không đưa EXE/DLL/ZIP trở lại lịch sử mã nguồn hiện tại; các commit nhập cũ vẫn tồn tại trong lịch sử Git.
+Tag có hậu tố như `v1.1.0-rc.1` được đánh dấu prerelease và không thay thế liên kết bản ổn định mới nhất. Quy trình không ghi đè release có sẵn. Tag và tài sản `v1.0.0` được giữ nguyên; nếu cần sửa một phiên bản đã công bố, tạo phiên bản tiếp theo. Không đưa EXE/DLL/ZIP trở lại lịch sử mã nguồn hiện tại; các commit nhập cũ vẫn tồn tại trong lịch sử Git.
 
 ## Tài liệu tham khảo
 
