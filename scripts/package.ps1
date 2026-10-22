@@ -57,6 +57,15 @@ try {
     $stream.Dispose()
     if (Test-Path -LiteralPath $tempPath) { Remove-Item -LiteralPath $tempPath -Force }
 }
-$hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+# Hash through .NET: Windows PowerShell launched from pwsh can inherit a module
+# path where the script-based Get-FileHash function is unavailable.
+$hasher = [Security.Cryptography.SHA256]::Create()
+$archiveStream = [IO.File]::OpenRead($archivePath)
+try {
+    $hash = [BitConverter]::ToString($hasher.ComputeHash($archiveStream)).Replace('-', '').ToLowerInvariant()
+} finally {
+    $archiveStream.Dispose()
+    $hasher.Dispose()
+}
 [IO.File]::WriteAllText((Join-Path $outputRoot 'SHA256SUMS.txt'), "$hash  $archiveName`n", [Text.UTF8Encoding]::new($false))
 Write-Output $archivePath
