@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Skills Junction</title>
+  <link rel="stylesheet" href="styles.css?v=27">
+  <script src="app.js?v=27" defer></script>
+</head>
+<body>
+  <div class="app-window">
+    <header class="app-bar">
+      <div class="app-bar-inner">
+        <svg class="brand-mark" viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M6 5.5 13.5 10 6 14.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <circle cx="4" cy="5" r="2.2"/><circle cx="15.5" cy="10" r="2.2"/><circle cx="4" cy="15" r="2.2"/>
+        </svg>
+        <span>Skills Junction</span>
+        <span class="bar-tag">NTFS · SYNC</span>
+      </div>
+    </header>
+    <main class="content">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="hero-eyebrow">SKILLS SYNC TOOL</p>
+          <h1>Quản lý <span class="accent">Junction</span></h1>
+          <p class="page-sub">Liên kết và đồng bộ thư mục Skills bằng NTFS Junction.</p>
+        </div>
+        <div class="hero-side">
+          <div class="stat"><strong id="stat-on">0</strong><span>Đang bật</span></div>
+          <div class="stat"><strong id="stat-all">0</strong><span>Junction</span></div>
+          <button class="button primary big" type="button" data-action="add"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg><span>Tạo Junction</span></button>
+        </div>
+      </section>
+      <div id="search-row" class="search-row" hidden>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><path d="m13.3 13.3 3.5 3.5"/></svg>
+        <input id="search" type="text" placeholder="Tìm theo tên hoặc nhóm Skills…" aria-label="Tìm Junction">
+      </div>
+      <section id="pairs" class="cards" aria-live="polite"></section>
+      <div id="notice" class="notice" role="status" aria-live="polite"></div>
+      <footer>Khi tắt, ứng dụng chỉ gỡ Junction do chính nó tạo.</footer>
+    </main>
+  </div>
+  <div id="overlay" class="overlay" hidden>
+    <section id="dialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"></section>
+  </div>
+</body>
+</html>

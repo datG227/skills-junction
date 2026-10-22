@@ -1,0 +1,9 @@
+# Local WebView2 profile and generated data
+*.WebView2/
+WebView2/
+UserData/
+*.log
+node_modules/
+test-results/
+playwright-report/
+.local/
