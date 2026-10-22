@@ -110,7 +110,8 @@
     dialogElement.replaceChildren();
   }
 
-  function openDialog(title, body) {
+  function openDialog(title, body, dialogClass = "") {
+    dialogElement.className = `dialog ${dialogClass}`.trim();
     dialogElement.innerHTML = `
       <div class="dialog-head"><h2 id="dialog-title">${escapeHtml(title)}</h2>
         <button class="button quiet icon" type="button" data-action="close" aria-label="Đóng"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7m0-7-7 7"/></svg></button></div>
@@ -134,10 +135,31 @@
   }
 
   function showSkills(pair, items) {
-    const rows = items.length
-      ? items.map(item => `<div class="skill-row">${escapeHtml(item.name)} <span class="skill-state">· ${escapeHtml(item.state)}</span></div>`).join("")
-      : '<p class="dialog-copy">Không tìm thấy thư mục Skills con.</p>';
-    openDialog(`Skills · ${pair.name}`, `<p class="dialog-copy">Nguồn: ${escapeHtml(pair.source)}</p><div class="skill-list">${rows}</div><div class="dialog-foot"><button class="button primary" type="button" data-action="close">Đóng</button></div>`);
+    const states = new Map([
+      ["Junction do ứng dụng quản lý", { label: "Đã liên kết", className: "linked" }],
+      ["Chưa liên kết", { label: "Chưa liên kết", className: "unlinked" }],
+      ["Đích đã có sẵn · giữ nguyên", { label: "Giữ nguyên", className: "kept" }]
+    ]);
+    const sortedItems = [...items].sort((a, b) => String(a.name ?? "").localeCompare(
+      String(b.name ?? ""), "vi", { sensitivity: "base", numeric: true }
+    ));
+    const rows = sortedItems.map(item => {
+      const state = states.get(item.state) ?? { label: item.state || "Không rõ", className: "unknown" };
+      return `<li class="skill-row"><span class="skill-name">${escapeHtml(item.name)}</span>
+        <span class="skill-state ${state.className}">${escapeHtml(state.label)}</span></li>`;
+    }).join("");
+    openDialog(`Skills · ${pair.name}`, `
+      <div class="skills-context">
+        <p class="dialog-copy">Nguồn: ${escapeHtml(pair.source)}</p>
+        <p class="skills-count">${items.length} skills · Sắp xếp A–Z</p>
+      </div>
+      <div class="skills-scroll" tabindex="0" role="region" aria-label="Danh sách Skills">
+        ${items.length ? `<ul class="skill-list">${rows}</ul>` : '<p class="skills-empty dialog-copy">Không tìm thấy thư mục Skills con.</p>'}
+      </div>
+      <div class="dialog-foot">
+        <p class="skills-note">Đã liên kết: Junction do ứng dụng quản lý.<br>Giữ nguyên: mục có sẵn ở đích.</p>
+        <button class="button primary" type="button" data-action="close">Đóng</button>
+      </div>`, "skills-dialog");
   }
 
   function setPairs(nextPairs) {
