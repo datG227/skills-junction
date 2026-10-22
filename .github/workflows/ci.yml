@@ -98,7 +98,7 @@ jobs:
           $policy = 'HKLM:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
           $appName = 'SkillsJunction.WebView2.exe'
           $previous = (Get-ItemProperty -LiteralPath $policy -Name $appName -ErrorAction SilentlyContinue).$appName
-          New-Item -Path $policy -Force | Out-Null
+          if (-not (Test-Path -LiteralPath $policy)) { New-Item -Path $policy -Force | Out-Null }
           try {
             New-ItemProperty -LiteralPath $policy -Name $appName -PropertyType String -Value "--remote-debugging-port=$env:SKILLS_JUNCTION_TEST_CDP_PORT" -Force | Out-Null
             npm run test:desktop
