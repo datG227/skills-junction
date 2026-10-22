@@ -9,9 +9,12 @@ const path = require('node:path');
 const publish = path.resolve(process.env.APP_PUBLISH_DIR || 'artifacts/publish');
 let app, browser, page, root;
 
-async function unusedPort() {
+async function unusedPort(requestedPort = 0) {
   const server = net.createServer();
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(requestedPort, '127.0.0.1', resolve);
+  });
   const port = server.address().port;
   await new Promise(resolve => server.close(resolve));
   return port;
@@ -21,7 +24,9 @@ test.beforeEach(async () => {
   const executable = path.join(publish, 'SkillsJunction.WebView2.exe');
   expect(fs.existsSync(executable), 'Run scripts/build.ps1 first to publish the desktop app').toBeTruthy();
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'skills-junction-desktop-'));
-  const port = await unusedPort();
+  // CI's elevated host uses an app-specific HKLM policy for this port; local
+  // non-elevated runs use an environment override and an ephemeral port.
+  const port = await unusedPort(Number(process.env.SKILLS_JUNCTION_TEST_CDP_PORT || 0));
   app = spawn(executable, [], {
     cwd: publish, windowsHide: false,
     env: { ...process.env, LOCALAPPDATA: path.join(root, 'profile'),

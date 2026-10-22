@@ -36,6 +36,8 @@ Python kiểm tra Junction thật, lưu lựa chọn skill, bảo vệ mục có
 
 Mỗi kiểm tra dùng thư mục tạm cùng `LOCALAPPDATA` riêng, không đọc cấu hình sử dụng hằng ngày. Cổng CDP chỉ mở trên loopback trong tiến trình kiểm tra; ứng dụng thông thường không bật cổng này. Để kiểm tra bản ZIP đã giải nén, đặt `APP_PUBLISH_DIR` tới thư mục chứa EXE rồi chạy `npm run test:desktop`.
 
+Máy Windows của GitHub chạy với quyền quản trị. WebView2 bỏ qua cờ debug từ biến môi trường khi host chạy elevated, nên bước kiểm tra CI dùng policy HKLM riêng cho `SkillsJunction.WebView2.exe` với cổng `9222`, rồi khôi phục giá trị cũ trong `finally`. Policy này chỉ đặt trên máy CI dùng một lần; host phát hành không chứa cờ debug. Kiểm tra thông thường trên máy cá nhân dùng cổng tạm qua biến môi trường. Xem [quy tắc override cho elevated host](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/security#for-an-elevated-host-app-use-appropriate-override-flags).
+
 ## Đóng gói
 
 Dùng cùng phiên bản ở cả bước build và đóng gói:

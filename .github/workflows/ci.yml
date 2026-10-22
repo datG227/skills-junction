@@ -88,10 +88,29 @@ jobs:
       - name: Test extracted desktop package
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.value }}
+          SKILLS_JUNCTION_TEST_CDP_PORT: '9222'
         run: |
           Expand-Archive -LiteralPath "artifacts/releases/SkillsJunction-v$env:PACKAGE_VERSION-win-x64.zip" -DestinationPath artifacts/extracted
           $env:APP_PUBLISH_DIR = Join-Path $PWD "artifacts/extracted/SkillsJunction-v$env:PACKAGE_VERSION"
-          npm run test:desktop
+          # Elevated WebView2 ignores environment/HKCU flags. Set only this app's
+          # HKLM override on the disposable runner and restore it after testing.
+          # https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/security#for-an-elevated-host-app-use-appropriate-override-flags
+          $policy = 'HKLM:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          $appName = 'SkillsJunction.WebView2.exe'
+          $previous = (Get-ItemProperty -LiteralPath $policy -Name $appName -ErrorAction SilentlyContinue).$appName
+          New-Item -Path $policy -Force | Out-Null
+          try {
+            New-ItemProperty -LiteralPath $policy -Name $appName -PropertyType String -Value "--remote-debugging-port=$env:SKILLS_JUNCTION_TEST_CDP_PORT" -Force | Out-Null
+            npm run test:desktop
+            $testExitCode = $LASTEXITCODE
+          } finally {
+            if ($null -eq $previous) {
+              Remove-ItemProperty -LiteralPath $policy -Name $appName -ErrorAction Stop
+            } else {
+              Set-ItemProperty -LiteralPath $policy -Name $appName -Value $previous
+            }
+          }
+          exit $testExitCode
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-package
