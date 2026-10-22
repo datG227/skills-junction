@@ -165,13 +165,14 @@ function Save-Pairs {
             id = $_.Id; name = $_.Name; group = $_.Group
             source = $_.Source; target = $_.Target
             createdTargetRoot = [bool]$_.CreatedTargetRoot
+            disabledSkills = @($_.DisabledSkills)
             managed = @($_.Managed | ForEach-Object { [ordered]@{ name = $_.Name; source = $_.Source } })
         }
     })
     $json = ConvertTo-Json -InputObject ([ordered]@{ version = 1; pairs = $items }) -Depth 7
     $temp = $script:ConfigPath + '.tmp'
     [System.IO.File]::WriteAllText($temp, $json, [System.Text.UTF8Encoding]::new($false))
-    Move-Item -LiteralPath $temp -Destination $script:ConfigPath -Force | Out-Null
+    Move-Item -LiteralPath $temp -Destination $script:ConfigPath -Force -ErrorAction Stop | Out-Null
 }
 
 function Load-Pairs {
@@ -188,6 +189,7 @@ function Load-Pairs {
                 Source = [string]$item.source; Target = [string]$item.target
                 CreatedTargetRoot = [bool]$item.createdTargetRoot
                 Managed = @($managed)
+                DisabledSkills = @($item.disabledSkills | Where-Object { $_ -is [string] })
             })
         }
     } catch {
@@ -212,8 +214,36 @@ function Get-PairValidationError($Pair, [string] $Source, [string] $Target) {
     return $null
 }
 
-function Enable-Pair($Pair) {
+function Test-EntryExists([string] $Path) {
+    try { [System.IO.File]::GetAttributes($Path) | Out-Null; return $true }
+    catch [System.IO.FileNotFoundException] { return $false }
+    catch [System.IO.DirectoryNotFoundException] { return $false }
+}
+
+function Get-SkillSource($Pair, [string] $Name) {
+    if ([string]::IsNullOrWhiteSpace($Name) -or $Name -in @('.', '..') -or $Name.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -ge 0) {
+        throw 'Tên skill không hợp lệ.'
+    }
+    $folder = @([System.IO.Directory]::GetDirectories($Pair.Source) | Where-Object {
+        [string]::Equals([System.IO.Path]::GetFileName($_), $Name, [StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1)[0]
+    if (-not $folder) { throw 'Không tìm thấy skill trong thư mục nguồn.' }
+    if (Test-ReparsePoint $folder) { throw 'Skill nguồn đang là một liên kết khác.' }
+    return $folder
+}
+
+function Test-OwnedSkill($Pair, [string] $Name, [string] $Source) {
+    $entry = Get-ManagedEntry $Pair $Name
+    if (-not $entry -or -not (Test-SamePath $entry.Source $Source)) { return $false }
+    try {
+        $actual = [SkillsJunction.Native]::GetJunctionTarget((Join-Path $Pair.Target $Name))
+        return ($actual -and (Test-SamePath $actual $entry.Source))
+    } catch { return $false }
+}
+
+function Enable-Pair($Pair, [string] $SkillName = '') {
     if (-not [System.IO.Directory]::Exists($Pair.Source)) { throw "Không tìm thấy thư mục nguồn:`n$($Pair.Source)" }
+    $folders = if ($SkillName) { @(Get-SkillSource $Pair $SkillName) } else { @([System.IO.Directory]::GetDirectories($Pair.Source)) }
     if (Test-ReparsePoint $Pair.Target) { throw "Thư mục đích đang là một Junction hoặc liên kết khác. Hãy chọn thư mục đích thật:`n$($Pair.Target)" }
     if (-not [System.IO.Directory]::Exists($Pair.Target)) {
         $parent = [System.IO.Directory]::GetParent((Get-NormalPath $Pair.Target))
@@ -227,15 +257,15 @@ function Enable-Pair($Pair) {
 
     $created = [System.Collections.Generic.List[string]]::new()
     $skipped = [System.Collections.Generic.List[string]]::new()
-    $folders = @([System.IO.Directory]::GetDirectories($Pair.Source))
     foreach ($sourceFolder in $folders) {
         $sourceInfo = [System.IO.DirectoryInfo]::new($sourceFolder)
+        if (-not $SkillName -and $Pair.DisabledSkills -contains $sourceInfo.Name) { continue }
         if (($sourceInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
             $skipped.Add("$($sourceInfo.Name) (nguồn đã là liên kết)")
             continue
         }
         $destination = Join-Path $Pair.Target $sourceInfo.Name
-        if ([System.IO.Directory]::Exists($destination) -or [System.IO.File]::Exists($destination)) {
+        if (Test-EntryExists $destination) {
             $existingTarget = $null
             if ([System.IO.Directory]::Exists($destination)) {
                 try { $existingTarget = [SkillsJunction.Native]::GetJunctionTarget($destination) } catch { }
@@ -256,6 +286,7 @@ function Enable-Pair($Pair) {
         } catch {
             $Pair.Managed = @($Pair.Managed | Where-Object { $_.Name -ne $sourceInfo.Name })
             Save-Pairs
+            if ($SkillName) { throw }
             $skipped.Add("$($sourceInfo.Name) (lỗi: $($_.Exception.Message))")
         }
     }
@@ -263,9 +294,59 @@ function Enable-Pair($Pair) {
     if ($created.Count -eq 0 -and (Get-ActiveLinkCount $Pair) -eq 0 -and $skipped.Count -gt 0) {
         throw "Chưa tạo được Junction nào. Các mục trùng tên ở đích được giữ nguyên:`n• $($skipped -join "`n• ")"
     }
-    $message = if ($created.Count) { "Đã tạo $($created.Count) Junction." } else { 'Các Junction hiện có vẫn hoạt động.' }
+    $message = if ($created.Count) { "Đã tạo $($created.Count) Junction." } elseif ((Get-ActiveLinkCount $Pair) -gt 0) { 'Các Junction hiện có vẫn hoạt động.' } else { 'Không có Junction nào đang bật. Các skill đã tắt vẫn được bỏ qua.' }
     if ($skipped.Count) { $message += "`n`nBỏ qua và giữ nguyên $($skipped.Count) mục trùng tên hoặc không hợp lệ:`n• $($skipped -join "`n• ")" }
     return $message
+}
+
+function Set-SkillEnabled($Pair, [string] $Name, [bool] $Enabled) {
+    $source = Get-SkillSource $Pair $Name
+    # Use the directory's canonical name, including case, for persisted entries.
+    $Name = [System.IO.Path]::GetFileName($source)
+    if (Test-ReparsePoint $Pair.Target) { throw 'Thư mục đích đang là một liên kết khác.' }
+    $destination = Join-Path $Pair.Target $Name
+    $exists = Test-EntryExists $destination
+    if ($exists -and -not (Test-OwnedSkill $Pair $Name $source)) {
+        throw 'Mục ở đích đã có sẵn hoặc đã thay đổi. Ứng dụng giữ nguyên mục này.'
+    }
+    if ($Enabled) {
+        $null = Enable-Pair $Pair $Name
+        if (-not (Test-OwnedSkill $Pair $Name $source)) { throw 'Chưa tạo được Junction cho skill này.' }
+        $Pair.DisabledSkills = @($Pair.DisabledSkills | Where-Object { $_ -ine $Name })
+        Save-Pairs
+        return "Đã bật skill $Name."
+    }
+    $previousDisabled = @($Pair.DisabledSkills)
+    if ($Pair.DisabledSkills -notcontains $Name) { $Pair.DisabledSkills = @($Pair.DisabledSkills) + @($Name) }
+    # Save the exclusion before unlinking, so a later group enable cannot recreate it.
+    try { Save-Pairs }
+    catch { $Pair.DisabledSkills = $previousDisabled; throw }
+    try {
+        if ($exists) { [System.IO.Directory]::Delete($destination, $false) }
+    } catch {
+        $Pair.DisabledSkills = $previousDisabled
+        Save-Pairs
+        throw
+    }
+    $Pair.Managed = @($Pair.Managed | Where-Object { $_.Name -ine $Name })
+    Save-Pairs
+    return "Đã tắt skill $Name."
+}
+
+function Get-PairSkills($Pair) {
+    if (-not [System.IO.Directory]::Exists($Pair.Source)) { return }
+    $targetProtected = Test-ReparsePoint $Pair.Target
+    foreach ($source in [System.IO.Directory]::GetDirectories($Pair.Source)) {
+        $name = [System.IO.Path]::GetFileName($source)
+        $destination = Join-Path $Pair.Target $name
+        $owned = Test-OwnedSkill $Pair $name $source
+        $exists = Test-EntryExists $destination
+        $enabled = $owned -and [System.IO.Directory]::Exists($destination)
+        $canToggle = -not $targetProtected -and -not (Test-ReparsePoint $source) -and (-not $exists -or $owned)
+        $state = if ($enabled) { 'Junction do ứng dụng quản lý' } elseif ($exists) { 'Đích đã có sẵn · giữ nguyên' } else { 'Chưa liên kết' }
+        $status = if ($enabled) { 'linked' } elseif ($exists) { 'kept' } else { 'unlinked' }
+        [ordered]@{ name = $name; state = $state; status = $status; enabled = [bool]$enabled; canToggle = [bool]$canToggle }
+    }
 }
 
 function Disable-Pair($Pair) {
@@ -332,7 +413,7 @@ while ($script:BackendRunning) {
     try {
         $request = $line | ConvertFrom-Json -ErrorAction Stop
         # Names may arrive mis-decoded from the host console; recover UTF-8 text.
-        foreach ($field in @('name', 'group', 'source', 'target', 'currentPath', 'path')) {
+        foreach ($field in @('name', 'group', 'source', 'target', 'currentPath', 'path', 'skill')) {
             $property = $request.PSObject.Properties[$field]
             if ($property) { $request.$field = Repair-Text ([string]$request.$field) }
         }
@@ -363,7 +444,7 @@ while ($script:BackendRunning) {
                 $newPair = [pscustomobject]@{
                     Id = [guid]::NewGuid().ToString('N'); Name = $name
                     Group = $(if ($group) { $group } else { 'Skills dùng chung' })
-                    Source = $source; Target = $target; CreatedTargetRoot = $false; Managed = @()
+                    Source = $source; Target = $target; CreatedTargetRoot = $false; Managed = @(); DisabledSkills = @()
                 }
                 [void]$script:Pairs.Add($newPair)
                 try {
@@ -417,18 +498,17 @@ while ($script:BackendRunning) {
             'skills' {
                 $pair = Get-ApiPair ([string]$request.id)
                 if (-not $pair) { throw 'Không tìm thấy cặp Junction này.' }
-                $skills = @()
-                if ([System.IO.Directory]::Exists($pair.Source)) {
-                    $skills = @([System.IO.Directory]::GetDirectories($pair.Source) | ForEach-Object {
-                        $name = [System.IO.Path]::GetFileName($_)
-                        $destination = Join-Path $pair.Target $name
-                        $managed = Get-ManagedEntry $pair $name
-                        $state = if ($managed -and [System.IO.Directory]::Exists($destination)) { 'Junction do ứng dụng quản lý' } elseif (Test-Path -LiteralPath $destination) { 'Đích đã có sẵn · giữ nguyên' } else { 'Chưa liên kết' }
-                        [ordered]@{ name = $name; state = $state }
-                    })
-                }
                 $response.pairId = $pair.Id
-                $response.skills = $skills
+                $response.skills = @(Get-PairSkills $pair)
+            }
+            'toggle-skill' {
+                $pair = Get-ApiPair ([string]$request.id)
+                if (-not $pair) { throw 'Không tìm thấy cặp Junction này.' }
+                if ($request.enabled -isnot [bool]) { throw 'Trạng thái bật/tắt không hợp lệ.' }
+                $response.message = Set-SkillEnabled $pair ([string]$request.skill) $request.enabled
+                $response.pairs = @(Get-PublicPairs)
+                $response.pairId = $pair.Id
+                $response.skills = @(Get-PairSkills $pair)
             }
             'open' {
                 $openPath = [string]$request.path
