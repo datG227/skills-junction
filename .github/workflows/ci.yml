@@ -60,6 +60,27 @@ jobs:
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -Version $env:PACKAGE_VERSION
       - name: Verify C# formatting
         run: dotnet format src/SkillsJunction.Desktop/SkillsJunction.Desktop.csproj --verify-no-changes --no-restore
+      - name: Ensure WebView2 Runtime
+        run: |
+          # Official detection/install guidance: https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution
+          $keys = @('HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}')
+          function Get-WebViewRuntimeVersion {
+            foreach ($key in $keys) {
+              $version = (Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue).pv
+              if ($version -and $version -ne '0.0.0.0') { return $version }
+            }
+          }
+          if (-not (Get-WebViewRuntimeVersion)) {
+            $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
+            $signature = Get-AuthenticodeSignature -LiteralPath $installer
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Invalid WebView2 installer signature.' }
+            $setup = Start-Process -FilePath $installer -ArgumentList '/silent', '/install' -WindowStyle Hidden -Wait -PassThru
+            Write-Output "WebView2 installer exit code: $($setup.ExitCode)"
+          }
+          $version = Get-WebViewRuntimeVersion
+          if (-not $version) { throw 'WebView2 Runtime is unavailable.' }
+          Write-Output "WebView2 Runtime: $version"
       - name: Create release ZIP
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.value }}

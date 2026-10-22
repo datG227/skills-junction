@@ -27,7 +27,8 @@ test.beforeEach(async () => {
     env: { ...process.env, LOCALAPPDATA: path.join(root, 'profile'),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
   });
-  app.on('error', () => {});
+  app.on('error', error => console.error('Desktop launch failed:', error.message));
+  try {
   await expect.poll(async () => {
     try { return (await fetch(`http://127.0.0.1:${port}/json/version`)).ok; }
     catch { return false; }
@@ -35,6 +36,12 @@ test.beforeEach(async () => {
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   page = browser.contexts()[0].pages()[0];
   await expect(page.getByRole('heading', { name: 'Quản lý Junction' })).toBeVisible();
+  } catch (error) {
+    const log = path.join(root, 'profile', 'SkillsJunction', 'WebView2.log');
+    console.error('Desktop startup exit code:', app.exitCode);
+    if (fs.existsSync(log)) console.error(fs.readFileSync(log, 'utf8'));
+    throw error;
+  }
 });
 
 test.afterEach(async () => {
