@@ -8,3 +8,13 @@ test-results/
 playwright-report/
 .local/
 __pycache__/
+artifacts/
+**/bin/
+**/obj/
+.vs/
+*.exe
+*.dll
+*.pdb
+*.zip
+*.deps.json
+*.runtimeconfig.json

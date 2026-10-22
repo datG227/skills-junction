@@ -13,7 +13,7 @@ import threading
 import unittest
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "SkillsJunction.WebView2.ps1"
+SCRIPT = Path(__file__).resolve().parents[1] / "src" / "backend" / "SkillsJunction.WebView2.ps1"
 
 
 @unittest.skipUnless(os.name == "nt", "Windows junctions required")

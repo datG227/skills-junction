@@ -1,0 +1,159 @@
+name: Windows build
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v[0-9]*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  verify:
+    name: Build, test and package
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Select package version
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          $version = if ($env:REF_TYPE -eq 'tag') { $env:REF_NAME.Substring(1) } else { "0.0.0-ci.$env:GITHUB_RUN_NUMBER" }
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw 'Invalid package version.' }
+          "value=$version" >> $env:GITHUB_OUTPUT
+      - run: npm ci --ignore-scripts
+      - name: Check JavaScript and dependencies
+        run: |
+          npm run check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm audit --audit-level=high
+      - name: Test backend and packaging
+        run: python -m unittest discover -s tests -v
+      - name: Build desktop app
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.value }}
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -Version $env:PACKAGE_VERSION
+      - name: Verify C# formatting
+        run: dotnet format src/SkillsJunction.Desktop/SkillsJunction.Desktop.csproj --verify-no-changes --no-restore
+      - name: Ensure WebView2 Runtime
+        run: |
+          # Official detection/install guidance: https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution
+          $keys = @('HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}')
+          function Get-WebViewRuntimeVersion {
+            foreach ($key in $keys) {
+              $version = (Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue).pv
+              if ($version -and $version -ne '0.0.0.0') { return $version }
+            }
+          }
+          if (-not (Get-WebViewRuntimeVersion)) {
+            $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
+            $signature = Get-AuthenticodeSignature -LiteralPath $installer
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Invalid WebView2 installer signature.' }
+            $setup = Start-Process -FilePath $installer -ArgumentList '/silent', '/install' -WindowStyle Hidden -Wait -PassThru
+            Write-Output "WebView2 installer exit code: $($setup.ExitCode)"
+          }
+          $version = Get-WebViewRuntimeVersion
+          if (-not $version) { throw 'WebView2 Runtime is unavailable.' }
+          Write-Output "WebView2 Runtime: $version"
+      - name: Create release ZIP
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.value }}
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1 -Version $env:PACKAGE_VERSION
+      - name: Test extracted desktop package
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.value }}
+          SKILLS_JUNCTION_TEST_CDP_PORT: '9222'
+        run: |
+          Expand-Archive -LiteralPath "artifacts/releases/SkillsJunction-v$env:PACKAGE_VERSION-win-x64.zip" -DestinationPath artifacts/extracted
+          $env:APP_PUBLISH_DIR = Join-Path $PWD "artifacts/extracted/SkillsJunction-v$env:PACKAGE_VERSION"
+          # Elevated WebView2 ignores environment/HKCU flags. Set only this app's
+          # HKLM override on the disposable runner and restore it after testing.
+          # https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/security#for-an-elevated-host-app-use-appropriate-override-flags
+          $policy = 'HKLM:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          $appName = 'SkillsJunction.WebView2.exe'
+          $previous = (Get-ItemProperty -LiteralPath $policy -Name $appName -ErrorAction SilentlyContinue).$appName
+          if (-not (Test-Path -LiteralPath $policy)) { New-Item -Path $policy -Force | Out-Null }
+          try {
+            New-ItemProperty -LiteralPath $policy -Name $appName -PropertyType String -Value "--remote-debugging-port=$env:SKILLS_JUNCTION_TEST_CDP_PORT" -Force | Out-Null
+            npm run test:desktop
+            $testExitCode = $LASTEXITCODE
+          } finally {
+            if ($null -eq $previous) {
+              Remove-ItemProperty -LiteralPath $policy -Name $appName -ErrorAction Stop
+            } else {
+              Set-ItemProperty -LiteralPath $policy -Name $appName -Value $previous
+            }
+          }
+          exit $testExitCode
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-package
+          path: |
+            artifacts/releases/*.zip
+            artifacts/releases/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: desktop-test-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    name: Publish tag release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-package
+          path: release
+      - name: Publish verified package
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          $zip = @(Get-ChildItem release -Filter *.zip)
+          if ($zip.Count -ne 1) { throw 'Expected one release ZIP.' }
+          $parts = (Get-Content release/SHA256SUMS.txt -Raw).Trim() -split '\s+'
+          if ($parts.Count -ne 2 -or $parts[1] -ne $zip[0].Name -or $parts[0] -ne (Get-FileHash $zip[0].FullName -Algorithm SHA256).Hash) { throw 'Release checksum mismatch.' }
+          $releaseArguments = @('release', 'create', $env:RELEASE_TAG, $zip[0].FullName, 'release/SHA256SUMS.txt', '--repo', $env:RELEASE_REPOSITORY, '--verify-tag', '--generate-notes', '--title', "Skills Junction $env:RELEASE_TAG")
+          if ($env:RELEASE_TAG -match '-') { $releaseArguments += @('--prerelease', '--latest=false') }
+          gh @releaseArguments
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation failed.' }
