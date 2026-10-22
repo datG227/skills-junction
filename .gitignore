@@ -18,3 +18,4 @@ artifacts/
 *.zip
 *.deps.json
 *.runtimeconfig.json
+/docs/images/skills-list-dialog.png
