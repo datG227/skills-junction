@@ -68,5 +68,5 @@
 - [x] Build and run tests from a fresh source checkout with no imported binaries available.
 - [x] Confirm no EXE/DLL/PDB/generated runtime metadata is tracked in the branch.
 - [x] Request read-only code review, address material findings, and run affected checks again.
-- [ ] Push branch, open a PR against main, wait for its actual GitHub CI result, and fix failures.
-- [ ] Report the PR, checks actually completed, and the local source-built executable. Leave merge and creation of a new public tag for the user's next instruction.
+- [x] Push branch, open a PR against main, wait for its actual GitHub CI result, and fix failures.
+- [x] Report the PR, checks actually completed, and the local source-built executable. Leave merge and creation of a new public tag for the user's next instruction.
