@@ -8,8 +8,6 @@
 
 [Tải bản mới nhất](https://github.com/datG227/skills-junction/releases/latest) · [Hướng dẫn phát triển](docs/development.md) · [Báo lỗi](https://github.com/datG227/skills-junction/issues)
 
-![Danh sách skill với công tắc bật/tắt](docs/images/skills-list-dialog.png)
-
 ## Tải và chạy
 
 1. Mở **Releases**, tải `SkillsJunction-v<version>-win-x64.zip`.
