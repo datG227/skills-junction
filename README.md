@@ -16,7 +16,7 @@ Chọn **Skills** trên một cặp thư mục, rồi dùng công tắc bên c�
 
 - **Tắt**: gỡ Junction riêng của skill do ứng dụng quản lý, giữ nguyên thư mục nguồn và ghi nhớ lựa chọn. Bật lại cả nhóm hoặc mở lại ứng dụng sẽ không tạo lại skill đã tắt.
 - **Bật**: tạo lại Junction cho riêng skill đó.
-- **Giữ nguyên**: mục ở đích đã có sẵn hoặc đã đổi nguồn, nên công tắc bị khóa để giữ nguyên dữ liệu.
+- **Công tắc mờ**: mục ở đích đã có sẵn hoặc đã đổi nguồn, nên công tắc bị khóa để giữ nguyên dữ liệu.
 
 Lựa chọn được lưu theo từng cặp thư mục trong `pairs.json`; cấu hình cũ vẫn đọc được.
 

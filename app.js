@@ -138,22 +138,15 @@
   }
 
   function showSkills(pair, items) {
-    const states = new Map([
-      ["linked", { label: "Đã liên kết", className: "linked" }],
-      ["unlinked", { label: "Chưa liên kết", className: "unlinked" }],
-      ["kept", { label: "Giữ nguyên", className: "kept" }]
-    ]);
     const sortedItems = [...items].sort((a, b) => String(a.name ?? "").localeCompare(
       String(b.name ?? ""), "vi", { sensitivity: "base", numeric: true }
     ));
     const rows = sortedItems.map(item => {
-      const state = states.get(item.status) ?? { label: item.state || "Không rõ", className: "unknown" };
       return `<li class="skill-row"><span class="skill-name">${escapeHtml(item.name)}</span>
-        <div class="skill-controls"><span class="skill-state ${state.className}">${escapeHtml(state.label)}</span>
-          <button class="switch" type="button" role="switch" aria-label="Junction skill ${escapeHtml(item.name)}"
-            aria-checked="${item.enabled === true}" data-action="toggle-skill" data-id="${escapeHtml(pair.id)}"
-            data-skill="${escapeHtml(item.name)}" ${item.canToggle === true ? "" : "disabled"}></button>
-        </div></li>`;
+        <button class="switch" type="button" role="switch" aria-label="Junction skill ${escapeHtml(item.name)}"
+          aria-checked="${item.enabled === true}" data-action="toggle-skill" data-id="${escapeHtml(pair.id)}"
+          data-skill="${escapeHtml(item.name)}" ${item.canToggle === true ? "" : "disabled"}></button>
+      </li>`;
     }).join("");
     openDialog(`Skills · ${pair.name}`, `
       <div class="skills-context">
@@ -165,7 +158,7 @@
       </div>
       <p class="form-error skills-error" id="skills-error" role="alert" hidden></p>
       <div class="dialog-foot">
-        <p class="skills-note">Tắt: gỡ Junction riêng và ghi nhớ lựa chọn.<br>Giữ nguyên: mục có sẵn ở đích.</p>
+        <p class="skills-note">Tắt: gỡ Junction riêng và ghi nhớ lựa chọn.<br>Công tắc mờ: mục này được giữ nguyên.</p>
         <button class="button primary" type="button" data-action="close">Đóng</button>
       </div>`, "skills-dialog");
     skillsDialogPairId = pair.id;
