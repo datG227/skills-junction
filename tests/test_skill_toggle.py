@@ -32,14 +32,14 @@ class SkillToggleTests(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.pair_id = result["pairs"][0]["id"]
 
-    def start_backend(self):
+    def start_backend(self, cwd=None):
         env = os.environ.copy()
         env["LOCALAPPDATA"] = str(self.root / "profile")
         script_path = str(SCRIPT).replace("'", "''")
         command = "& ([scriptblock]::Create([IO.File]::ReadAllText('" + script_path + "', [Text.Encoding]::UTF8))) -BackendServer"
         self.proc = subprocess.Popen(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                     text=True, encoding="utf-8", env=env)
+                                     text=True, encoding="utf-8", env=env, cwd=cwd)
         self.responses = queue.Queue()
         self.reader = threading.Thread(target=self.read_responses, args=(self.proc, self.responses), daemon=True)
         self.reader.start()
@@ -101,6 +101,21 @@ class SkillToggleTests(unittest.TestCase):
         self.assertFalse((self.target / "alpha").exists())
         self.assertTrue(self.toggle("alpha", True)["ok"])
         self.assertTrue((self.target / "alpha" / "SKILL.md").is_file())
+
+    def test_skill_source_paths_are_absolute_for_relative_source_configuration(self):
+        self.stop_backend()
+        self.start_backend(cwd=self.root)
+        result = self.call("edit", id=self.pair_id, name="Test", group="Tests",
+                           source="source", target=str(self.target))
+        self.assertTrue(result["ok"], result)
+        items = self.call("skills", id=self.pair_id)["skills"]
+        alpha = next(item for item in items if item["name"] == "alpha")
+        self.assertEqual(alpha.get("sourcePath"), str(self.source / "alpha"))
+        self.assertTrue(self.toggle("alpha", False)["ok"])
+        items = self.call("skills", id=self.pair_id)["skills"]
+        alpha = next(item for item in items if item["name"] == "alpha")
+        self.assertFalse(alpha["enabled"])
+        self.assertEqual(alpha.get("sourcePath"), str(self.source / "alpha"))
 
     def test_enabling_one_skill_does_not_enable_other_skills(self):
         self.assertTrue(self.call("toggle", id=self.pair_id, enabled=False)["ok"])
