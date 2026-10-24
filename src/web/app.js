@@ -68,6 +68,11 @@
     pairsElement.innerHTML = visible.map(pair => renderCard(pair)).join("");
   }
 
+  function renderCopyButton(path, label = "Sao chép đường dẫn") {
+    return `<button class="button quiet mini" type="button" data-action="copy-path"
+      data-path="${escapeHtml(path)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(path)}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>`;
+  }
+
   function renderCard(pair) {
     const info = skillInfo.get(pair.id);
     const meta = info
@@ -79,7 +84,7 @@
       : '<span class="meta-chip">Đang đếm skills…</span>';
     const tools = path => `
       <div class="path-tools">
-        <button class="button quiet mini" data-action="copy-path" data-path="${escapeHtml(path)}" aria-label="Sao chép đường dẫn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+        ${renderCopyButton(path)}
         <button class="button quiet mini" data-action="open" data-path="${escapeHtml(path)}" aria-label="Mở thư mục trong Explorer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.2 10H20a2 2 0 0 1 1.9 2.6l-1.6 5a2 2 0 0 1-1.9 1.4H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.7.9l.8 1.2a2 2 0 0 0 1.7.9H18a2 2 0 0 1 2 2z"/></svg></button>
       </div>`;
     return `
@@ -143,9 +148,12 @@
     ));
     const rows = sortedItems.map(item => {
       return `<li class="skill-row"><span class="skill-name">${escapeHtml(item.name)}</span>
-        <button class="switch" type="button" role="switch" aria-label="Junction skill ${escapeHtml(item.name)}"
-          aria-checked="${item.enabled === true}" data-action="toggle-skill" data-id="${escapeHtml(pair.id)}"
-          data-skill="${escapeHtml(item.name)}" ${item.canToggle === true ? "" : "disabled"}></button>
+        <div class="skill-actions">
+          ${renderCopyButton(item.sourcePath, `Sao chép đường dẫn skill ${item.name}`)}
+          <button class="switch" type="button" role="switch" aria-label="Junction skill ${escapeHtml(item.name)}"
+            aria-checked="${item.enabled === true}" data-action="toggle-skill" data-id="${escapeHtml(pair.id)}"
+            data-skill="${escapeHtml(item.name)}" ${item.canToggle === true ? "" : "disabled"}></button>
+        </div>
       </li>`;
     }).join("");
     openDialog(`Skills · ${pair.name}`, `
@@ -156,6 +164,7 @@
       <div class="skills-scroll" tabindex="0" role="region" aria-label="Danh sách Skills">
         ${items.length ? `<ul class="skill-list">${rows}</ul>` : '<p class="skills-empty dialog-copy">Không tìm thấy thư mục Skills con.</p>'}
       </div>
+      <p class="skills-copy-status" id="skills-copy-status" role="status" aria-live="polite" hidden></p>
       <p class="form-error skills-error" id="skills-error" role="alert" hidden></p>
       <div class="dialog-foot">
         <p class="skills-note">Tắt: gỡ Junction riêng và ghi nhớ lựa chọn.<br>Công tắc mờ: mục này được giữ nguyên.</p>
@@ -175,6 +184,30 @@
   function setNotice(text, isError = false) {
     notice.textContent = text ?? "";
     notice.classList.toggle("error", Boolean(isError));
+  }
+
+  async function copyPath(text) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+    } catch { }
+    const previousFocus = document.activeElement;
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.cssText = "position:fixed;left:-9999px;top:0";
+    document.body.appendChild(textarea);
+    try {
+      textarea.focus();
+      textarea.select();
+      if (!document.execCommand("copy")) {
+        throw new Error("Không sao chép được đường dẫn. Hãy thử lại.");
+      }
+    } finally {
+      textarea.remove();
+      previousFocus?.focus({ preventScroll: true });
+    }
   }
 
   window.chrome.webview.addEventListener("message", event => {
@@ -251,21 +284,15 @@
         }
       }
       else if (action === "copy-path") {
-        const text = button.dataset.path || "";
-        let copied = false;
-        try {
-          if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(text);
-            copied = true;
-          }
-        } catch { }
-        if (!copied) {
-          const textarea = document.createElement("textarea");
-          textarea.value = text;
-          document.body.appendChild(textarea);
-          textarea.select();
-          document.execCommand("copy");
-          textarea.remove();
+        const status = button.closest(".skills-dialog") ? $("#skills-copy-status", dialogElement) : null;
+        if (status) {
+          status.hidden = true;
+          $("#skills-error", dialogElement).hidden = true;
+        }
+        await copyPath(button.dataset.path || "");
+        if (status) {
+          status.textContent = "Đã sao chép đường dẫn.";
+          status.hidden = false;
         }
         setNotice("Đã sao chép đường dẫn.");
       }
@@ -278,7 +305,8 @@
     } catch (error) {
       button.disabled = false;
       setNotice(error.message, true);
-      if (action === "toggle-skill" && skillsDialogPairId === id) {
+      if ((action === "toggle-skill" && skillsDialogPairId === id) ||
+          (action === "copy-path" && button.closest(".skills-dialog"))) {
         const errorElement = $("#skills-error");
         errorElement.textContent = error.message;
         errorElement.hidden = false;
