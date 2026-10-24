@@ -23,7 +23,8 @@ async function unusedPort(requestedPort = 0) {
 test.beforeEach(async () => {
   const executable = path.join(publish, 'SkillsJunction.WebView2.exe');
   expect(fs.existsSync(executable), 'Run scripts/build.ps1 first to publish the desktop app').toBeTruthy();
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'skills-junction-desktop-'));
+  // Resolve Windows 8.3 aliases (e.g. RUNNER~1) before comparing copied paths.
+  root = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'skills-junction-desktop-'));
   // CI's elevated host uses an app-specific HKLM policy for this port; local
   // non-elevated runs use an environment override and an ephemeral port.
   const port = await unusedPort(Number(process.env.SKILLS_JUNCTION_TEST_CDP_PORT || 0));
@@ -72,7 +73,7 @@ test.afterEach(async () => {
     if (app && app.exitCode === null) app.kill();
     // Never follow junctions or remove paths outside this test's generated root.
     if (root) {
-      expect(path.dirname(path.resolve(root))).toBe(path.resolve(os.tmpdir()));
+      expect(path.dirname(path.resolve(root))).toBe(fs.realpathSync.native(os.tmpdir()));
       expect(path.basename(root)).toMatch(/^skills-junction-desktop-/);
       const profile = path.join(root, 'profile');
       // WebView2 may release its profile slightly after the app closes.
