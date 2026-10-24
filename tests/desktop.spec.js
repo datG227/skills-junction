@@ -155,3 +155,82 @@ test('actual host preserves Vietnamese text and per-skill exclusions', async () 
   expect(fs.readFileSync(path.join(target, 'kỹ-năng', 'SKILL.md'), 'utf8')).toBe('kỹ-năng');
   expect(fs.readFileSync(path.join(source, 'kỹ-năng', 'SKILL.md'), 'utf8')).toBe('kỹ-năng');
 });
+
+async function openCopySkills() {
+  const source = path.join(root, 'nguồn dùng chung');
+  const target = path.join(root, 'đích');
+  for (const skill of ['kỹ năng & mẫu', 'giữ nguyên']) {
+    fs.mkdirSync(path.join(source, skill), { recursive: true });
+  }
+  fs.mkdirSync(path.join(target, 'giữ nguyên'), { recursive: true });
+  const added = await request('add', { name: 'Dữ liệu mẫu', group: 'Kiểm tra', source, target });
+  expect(added.ok).toBeTruthy();
+  await page.getByRole('button', { name: 'Skills', exact: true }).click();
+  return { source, target };
+}
+
+test('copies source skill paths for enabled, disabled and protected skills', async () => {
+  const { source, target } = await openCopySkills();
+  // Replace only the clipboard I/O boundary to preserve the user's clipboard.
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async text => { window.copiedSkillPath = text; },
+    } });
+  });
+  const dialog = page.getByRole('dialog');
+  const copy = dialog.getByRole('button', { name: 'Sao chép đường dẫn skill kỹ năng & mẫu', exact: true });
+  const toggle = dialog.getByRole('switch', { name: 'Junction skill kỹ năng & mẫu', exact: true });
+  await expect(copy).toBeVisible();
+  await copy.click();
+  expect(await page.evaluate(() => window.copiedSkillPath)).toBe(path.join(source, 'kỹ năng & mẫu'));
+  await expect(dialog.getByRole('status')).toHaveText('Đã sao chép đường dẫn.');
+  await expect(toggle).toBeChecked();
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await copy.click();
+  expect(await page.evaluate(() => window.copiedSkillPath)).toBe(path.join(source, 'kỹ năng & mẫu'));
+  expect(fs.existsSync(path.join(target, 'kỹ năng & mẫu'))).toBeFalsy();
+
+  await expect(dialog.getByRole('switch', { name: 'Junction skill giữ nguyên', exact: true })).toBeDisabled();
+  const protectedCopy = dialog.getByRole('button', { name: 'Sao chép đường dẫn skill giữ nguyên', exact: true });
+  await expect(protectedCopy).toBeEnabled();
+  await protectedCopy.focus();
+  await protectedCopy.press('Enter');
+  expect(await page.evaluate(() => window.copiedSkillPath)).toBe(path.join(source, 'giữ nguyên'));
+});
+
+test('skill path copy falls back when clipboard permission is denied', async () => {
+  const { source } = await openCopySkills();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async () => { throw new DOMException('Denied', 'NotAllowedError'); },
+    } });
+    document.execCommand = command => {
+      if (command !== 'copy') return false;
+      window.copiedSkillPath = document.activeElement.value;
+      return true;
+    };
+  });
+  const copy = page.getByRole('button', { name: 'Sao chép đường dẫn skill kỹ năng & mẫu', exact: true });
+  await copy.click();
+  expect(await page.evaluate(() => window.copiedSkillPath)).toBe(path.join(source, 'kỹ năng & mẫu'));
+  await expect(copy).toBeFocused();
+  await expect(page.locator('textarea')).toHaveCount(0);
+  await expect(page.getByRole('dialog').getByRole('status')).toHaveText('Đã sao chép đường dẫn.');
+});
+
+test('skill path copy reports failure instead of success when both methods fail', async () => {
+  await openCopySkills();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async () => { throw new DOMException('Denied', 'NotAllowedError'); },
+    } });
+    document.execCommand = () => false;
+  });
+  await page.getByRole('button', { name: 'Sao chép đường dẫn skill kỹ năng & mẫu', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  await expect(dialog.getByRole('alert')).toHaveText('Không sao chép được đường dẫn. Hãy thử lại.');
+  await expect(dialog.getByRole('status')).toBeHidden();
+  await expect(page.locator('textarea')).toHaveCount(0);
+});

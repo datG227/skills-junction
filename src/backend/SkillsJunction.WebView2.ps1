@@ -345,7 +345,7 @@ function Get-PairSkills($Pair) {
         $canToggle = -not $targetProtected -and -not (Test-ReparsePoint $source) -and (-not $exists -or $owned)
         $state = if ($enabled) { 'Junction do ứng dụng quản lý' } elseif ($exists) { 'Đích đã có sẵn · giữ nguyên' } else { 'Chưa liên kết' }
         $status = if ($enabled) { 'linked' } elseif ($exists) { 'kept' } else { 'unlinked' }
-        [ordered]@{ name = $name; state = $state; status = $status; enabled = [bool]$enabled; canToggle = [bool]$canToggle }
+        [ordered]@{ name = $name; sourcePath = (Get-NormalPath $source); state = $state; status = $status; enabled = [bool]$enabled; canToggle = [bool]$canToggle }
     }
 }
 
