@@ -28,6 +28,8 @@ Get-FileHash .\SkillsJunction-v1.0.1-win-x64.zip -Algorithm SHA256
 
 Tạo cặp thư mục với **nguồn** là nơi chứa các skill và **đích** là nơi cần dùng chúng. Bật cặp để tạo Junction. Mở **Skills** để xem danh sách hai cột và dùng công tắc cạnh tên skill.
 
+Khi tạo hoặc sửa Junction, bấm ra ngoài hộp thoại hoặc nhấn Escape không làm mất biểu mẫu đang nhập. Dùng nút **×** hoặc **Hủy** để đóng; lưu thành công cũng tự đóng hộp thoại.
+
 Nút copy cạnh mỗi công tắc sao chép đường dẫn đầy đủ tới thư mục nguồn của skill, kể cả khi skill đang tắt hoặc công tắc bị khóa. Dán đường dẫn đó cho công cụ AI đọc khi cần.
 
 - **Tắt skill:** gỡ Junction do ứng dụng quản lý, giữ nguyên thư mục nguồn và ghi nhớ lựa chọn. Bật lại nhóm hoặc mở lại ứng dụng không tạo lại skill đã tắt.
