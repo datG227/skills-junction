@@ -157,6 +157,53 @@ test('actual host preserves Vietnamese text and per-skill exclusions', async () 
   expect(fs.readFileSync(path.join(source, 'kỹ-năng', 'SKILL.md'), 'utf8')).toBe('kỹ-năng');
 });
 
+for (const mode of ['create', 'edit']) {
+  test(`${mode} Junction form preserves input until explicitly closed or saved`, async () => {
+    const source = path.join(root, 'nguồn');
+    const target = path.join(root, 'đích');
+    fs.mkdirSync(source);
+    if (mode === 'edit') {
+      const added = await request('add', { name: 'Ban đầu', group: 'Nhóm gốc', source, target });
+      expect(added.ok).toBeTruthy();
+    }
+
+    const open = () => page.getByRole('button', {
+      name: mode === 'create' ? 'Tạo Junction' : 'Sửa', exact: true,
+    }).click();
+    const dialog = page.getByRole('dialog');
+    const fields = { name: 'Bản nháp tiếng Việt', group: 'Nhóm đang nhập', source, target };
+    await open();
+    for (const [name, value] of Object.entries(fields)) {
+      await dialog.locator(`input[name="${name}"]`).fill(value);
+    }
+
+    // A real click just outside the dialog must not discard the draft.
+    await page.locator('#overlay').click({ position: { x: 3, y: 3 } });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    for (const [name, value] of Object.entries(fields)) {
+      await expect(dialog.locator(`input[name="${name}"]`)).toHaveValue(value);
+    }
+    expect((await request('load')).pairs).toHaveLength(mode === 'create' ? 0 : 1);
+
+    await dialog.getByRole('button', {
+      name: mode === 'create' ? 'Tạo Junction' : 'Lưu thay đổi', exact: true,
+    }).click();
+    await expect(dialog).toBeHidden();
+    const saved = await request('load');
+    expect(saved.pairs).toHaveLength(1);
+    expect(saved.pairs[0]).toMatchObject(fields);
+
+    // Both explicit dismissal controls still work after reopening the form.
+    for (const name of ['Đóng', 'Hủy']) {
+      await open();
+      await dialog.getByRole('button', { name, exact: true }).click();
+      await expect(dialog).toBeHidden();
+    }
+  });
+}
+
 async function openCopySkills() {
   const source = path.join(root, 'nguồn dùng chung');
   const target = path.join(root, 'đích');

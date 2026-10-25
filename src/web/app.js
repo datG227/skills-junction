@@ -240,7 +240,7 @@
   document.addEventListener("click", async event => {
     const button = event.target.closest("[data-action]");
     if (!button) {
-      if (event.target === overlay) closeDialog();
+      if (event.target === overlay && !$("#edit-form", dialogElement)) closeDialog();
       return;
     }
     const { action, id, field } = button.dataset;
@@ -329,7 +329,9 @@
     }
   });
 
-  document.addEventListener("keydown", event => { if (event.key === "Escape" && !overlay.hidden) closeDialog(); });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !overlay.hidden && !$("#edit-form", dialogElement)) closeDialog();
+  });
 
   $("#search")?.addEventListener("input", event => {
     query = event.target.value.trim().toLowerCase();
