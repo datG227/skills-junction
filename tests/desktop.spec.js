@@ -157,6 +157,37 @@ test('actual host preserves Vietnamese text and per-skill exclusions', async () 
   expect(fs.readFileSync(path.join(source, 'kỹ-năng', 'SKILL.md'), 'utf8')).toBe('kỹ-năng');
 });
 
+test('sync links new skills and surfaces broken links', async () => {
+  const source = path.join(root, 'nguồn');
+  const target = path.join(root, 'đích');
+  const alpha = path.join(source, 'alpha');
+  fs.mkdirSync(alpha, { recursive: true });
+  fs.writeFileSync(path.join(alpha, 'SKILL.md'), 'alpha', 'utf8');
+  const added = await request('add', { name: 'Đồng bộ', group: 'Kiểm tra', source, target });
+  expect(added.ok).toBeTruthy();
+
+  fs.mkdirSync(path.join(source, 'delta'));
+  fs.writeFileSync(path.join(source, 'delta', 'SKILL.md'), 'delta', 'utf8');
+  expect(fs.existsSync(path.join(target, 'delta'))).toBeFalsy();
+
+  await page.getByRole('button', { name: 'Đồng bộ', exact: true }).click();
+  const synced = path.join(target, 'delta', 'SKILL.md');
+  await expect.poll(() => fs.existsSync(synced)).toBeTruthy();
+  await expect(page.locator('#notice')).toContainText('Đã tạo 1 Junction');
+  expect(fs.readFileSync(synced, 'utf8')).toBe('delta');
+
+  fs.rmSync(alpha, { recursive: true });
+  await page.getByRole('button', { name: 'Đồng bộ', exact: true }).click();
+  await expect(page.getByText('1 link hỏng', { exact: true })).toBeVisible();
+  await expect(page.locator('#notice')).toContainText('Link hỏng');
+
+  await page.getByRole('button', { name: 'Skills', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('Link hỏng', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('switch', { name: 'Junction skill alpha', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Đóng', exact: true }).last().click();
+});
+
 for (const mode of ['create', 'edit']) {
   test(`${mode} Junction form preserves input until explicitly closed or saved`, async () => {
     const source = path.join(root, 'nguồn');

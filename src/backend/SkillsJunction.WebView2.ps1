@@ -115,6 +115,7 @@ function Repair-Text([string] $Value) {
 
 $script:AppFolder = Join-Path $env:LOCALAPPDATA 'SkillsJunction'
 $script:ConfigPath = Join-Path $script:AppFolder 'pairs.json'
+$script:BackupPath = Join-Path $script:AppFolder 'pairs.json.bak'
 $script:Pairs = [System.Collections.ArrayList]::new()
 $script:Window = $null
 $script:CardsPanel = $null
@@ -160,6 +161,11 @@ function Get-ActiveLinkCount($Pair) {
 
 function Save-Pairs {
     [System.IO.Directory]::CreateDirectory($script:AppFolder) | Out-Null
+    # Keep the previous configuration; a failed backup must not block the save
+    # itself, which already reports its own errors to the UI.
+    if ([System.IO.File]::Exists($script:ConfigPath)) {
+        try { [System.IO.File]::Copy($script:ConfigPath, $script:BackupPath, $true) } catch { }
+    }
     $items = @($script:Pairs | ForEach-Object {
         [ordered]@{
             id = $_.Id; name = $_.Name; group = $_.Group
@@ -241,6 +247,30 @@ function Test-OwnedSkill($Pair, [string] $Name, [string] $Source) {
     } catch { return $false }
 }
 
+function Get-ManagedEntryState($Pair, $Entry) {
+    $destination = Join-Path $Pair.Target $Entry.Name
+    if (-not (Test-EntryExists $destination)) { return 'stale' }
+    try { $actual = [SkillsJunction.Native]::GetJunctionTarget($destination) }
+    catch { return 'kept' }
+    if (-not $actual) { return 'kept' }
+    if (-not (Test-SamePath $actual $Entry.Source)) { return 'kept' }
+    # Windows reports a broken junction as an existing reparse point, so the
+    # link target must be checked as well.
+    if (-not [System.IO.Directory]::Exists($actual)) { return 'dangling' }
+    return 'linked'
+}
+
+function Get-PairHealth($Pair) {
+    $dangling = [System.Collections.Generic.List[string]]::new()
+    foreach ($entry in @($Pair.Managed)) {
+        if ((Get-ManagedEntryState $Pair $entry) -eq 'dangling') { $dangling.Add($entry.Name) }
+    }
+    return [ordered]@{
+        sourceMissing = -not [System.IO.Directory]::Exists($Pair.Source)
+        dangling = @($dangling)
+    }
+}
+
 function Enable-Pair($Pair, [string] $SkillName = '') {
     if (-not [System.IO.Directory]::Exists($Pair.Source)) { throw "Không tìm thấy thư mục nguồn:`n$($Pair.Source)" }
     $folders = if ($SkillName) { @(Get-SkillSource $Pair $SkillName) } else { @([System.IO.Directory]::GetDirectories($Pair.Source)) }
@@ -299,6 +329,20 @@ function Enable-Pair($Pair, [string] $SkillName = '') {
     return $message
 }
 
+function Sync-Pair($Pair) {
+    if (-not [System.IO.Directory]::Exists($Pair.Source)) { throw "Không tìm thấy thư mục nguồn:`n$($Pair.Source)" }
+    $health = Get-PairHealth $Pair
+    $dangling = @($health.dangling)
+    $danglingNote = if ($dangling.Count) {
+        "`n`nLink hỏng (nguồn đã mất), cần xử lý thủ công:`n• $($dangling -join "`n• ")"
+    } else { '' }
+    # Syncing never turns an off pair on; enabling is an explicit user action.
+    if ((Get-ActiveLinkCount $Pair) -eq 0) {
+        return "Cặp đang tắt nên chưa tạo Junction nào. Hãy bật cặp rồi đồng bộ lại.$danglingNote"
+    }
+    return (Enable-Pair $Pair) + $danglingNote
+}
+
 function Set-SkillEnabled($Pair, [string] $Name, [bool] $Enabled) {
     $source = Get-SkillSource $Pair $Name
     # Use the directory's canonical name, including case, for persisted entries.
@@ -334,19 +378,38 @@ function Set-SkillEnabled($Pair, [string] $Name, [bool] $Enabled) {
 }
 
 function Get-PairSkills($Pair) {
-    if (-not [System.IO.Directory]::Exists($Pair.Source)) { return }
+    $sourceExists = [System.IO.Directory]::Exists($Pair.Source)
     $targetProtected = Test-ReparsePoint $Pair.Target
-    foreach ($source in [System.IO.Directory]::GetDirectories($Pair.Source)) {
-        $name = [System.IO.Path]::GetFileName($source)
-        $destination = Join-Path $Pair.Target $name
-        $owned = Test-OwnedSkill $Pair $name $source
-        $exists = Test-EntryExists $destination
-        $enabled = $owned -and [System.IO.Directory]::Exists($destination)
-        $canToggle = -not $targetProtected -and -not (Test-ReparsePoint $source) -and (-not $exists -or $owned)
-        $state = if ($enabled) { 'Junction do ứng dụng quản lý' } elseif ($exists) { 'Đích đã có sẵn · giữ nguyên' } else { 'Chưa liên kết' }
-        $status = if ($enabled) { 'linked' } elseif ($exists) { 'kept' } else { 'unlinked' }
-        [ordered]@{ name = $name; sourcePath = (Get-NormalPath $source); state = $state; status = $status; enabled = [bool]$enabled; canToggle = [bool]$canToggle }
+    $rows = [System.Collections.Generic.List[object]]::new()
+    $knownSkills = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    if ($sourceExists) {
+        foreach ($source in [System.IO.Directory]::GetDirectories($Pair.Source)) {
+            $name = [System.IO.Path]::GetFileName($source)
+            [void]$knownSkills.Add($name)
+            $destination = Join-Path $Pair.Target $name
+            $owned = Test-OwnedSkill $Pair $name $source
+            $exists = Test-EntryExists $destination
+            $enabled = $owned -and [System.IO.Directory]::Exists($destination)
+            $canToggle = -not $targetProtected -and -not (Test-ReparsePoint $source) -and (-not $exists -or $owned)
+            $state = if ($enabled) { 'Junction do ứng dụng quản lý' } elseif ($exists) { 'Đích đã có sẵn · giữ nguyên' } else { 'Chưa liên kết' }
+            $status = if ($enabled) { 'linked' } elseif ($exists) { 'kept' } else { 'unlinked' }
+            $rows.Add([ordered]@{ name = $name; sourcePath = (Get-NormalPath $source); state = $state; status = $status; enabled = [bool]$enabled; canToggle = [bool]$canToggle })
+        }
     }
+    # Managed entries whose source folder no longer exists must stay visible so
+    # broken links can be reported instead of silently disappearing.
+    foreach ($entry in @($Pair.Managed)) {
+        if ($knownSkills.Contains($entry.Name)) { continue }
+        $linkState = Get-ManagedEntryState $Pair $entry
+        if ($linkState -eq 'stale') { continue }
+        $status = if ($linkState -eq 'dangling') { 'dangling' } else { 'kept' }
+        $state = if ($status -eq 'dangling') { 'Nguồn đã mất · link hỏng' } else { 'Đích đã thay đổi · giữ nguyên' }
+        $rows.Add([ordered]@{
+            name = $entry.Name; sourcePath = (Get-NormalPath $entry.Source); state = $state
+            status = $status; enabled = $false; canToggle = $false
+        })
+    }
+    return $rows
 }
 
 function Disable-Pair($Pair) {
@@ -394,6 +457,7 @@ function Get-PublicPairs {
             id = $pair.Id; name = $pair.Name; group = $pair.Group
             source = $pair.Source; target = $pair.Target
             on = ((Get-ActiveLinkCount $pair) -gt 0)
+            health = Get-PairHealth $pair
         }
     }
     return $items
@@ -506,6 +570,14 @@ while ($script:BackendRunning) {
                 if (-not $pair) { throw 'Không tìm thấy cặp Junction này.' }
                 if ($request.enabled -isnot [bool]) { throw 'Trạng thái bật/tắt không hợp lệ.' }
                 $response.message = Set-SkillEnabled $pair ([string]$request.skill) $request.enabled
+                $response.pairs = @(Get-PublicPairs)
+                $response.pairId = $pair.Id
+                $response.skills = @(Get-PairSkills $pair)
+            }
+            'sync' {
+                $pair = Get-ApiPair ([string]$request.id)
+                if (-not $pair) { throw 'Không tìm thấy cặp Junction này.' }
+                $response.message = Sync-Pair $pair
                 $response.pairs = @(Get-PublicPairs)
                 $response.pairId = $pair.Id
                 $response.skills = @(Get-PairSkills $pair)

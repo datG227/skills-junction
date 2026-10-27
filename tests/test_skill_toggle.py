@@ -200,6 +200,69 @@ class SkillToggleTests(unittest.TestCase):
         self.assertTrue(self.call("toggle", id=self.pair_id, enabled=True)["ok"])
         self.assertTrue((self.target / "alpha" / "SKILL.md").is_file())
 
+    def test_sync_links_new_skill_without_recreating_disabled_skills(self):
+        self.assertTrue(self.toggle("alpha", False)["ok"])
+        delta = self.source / "delta"
+        delta.mkdir()
+        (delta / "SKILL.md").write_text("delta", encoding="utf-8")
+        self.assertFalse((self.target / "delta").exists())
+
+        result = self.call("sync", id=self.pair_id)
+        self.assertTrue(result["ok"], result)
+        self.assertIn("Đã tạo 1 Junction", result["message"])
+        self.assertEqual((self.target / "delta" / "SKILL.md").read_text(encoding="utf-8"), "delta")
+        self.assertFalse((self.target / "alpha").exists())
+        self.assertTrue((self.target / "beta" / "SKILL.md").is_file())
+        items = {item["name"]: item for item in result["skills"]}
+        self.assertEqual(items["delta"]["status"], "linked")
+
+        again = self.call("sync", id=self.pair_id)
+        self.assertTrue(again["ok"], again)
+        self.assertTrue((self.target / "delta" / "SKILL.md").is_file())
+
+    def test_sync_reports_and_preserves_dangling_links(self):
+        shutil.rmtree(self.source / "alpha")
+        pair = self.call("load")["pairs"][0]
+        self.assertFalse(pair["health"]["sourceMissing"])
+        self.assertEqual(pair["health"]["dangling"], ["alpha"])
+        items = {item["name"]: item for item in self.call("skills", id=self.pair_id)["skills"]}
+        self.assertEqual(items["alpha"]["status"], "dangling")
+        self.assertFalse(items["alpha"]["canToggle"])
+
+        result = self.call("sync", id=self.pair_id)
+        self.assertTrue(result["ok"], result)
+        self.assertIn("link hỏng", result["message"].lower())
+        self.assertTrue(os.path.lexists(self.target / "alpha"))
+        self.assertTrue((self.target / "beta" / "SKILL.md").is_file())
+
+    def test_missing_source_is_reported_and_sync_refuses_to_run(self):
+        shutil.rmtree(self.source)
+        pair = self.call("load")["pairs"][0]
+        self.assertTrue(pair["health"]["sourceMissing"])
+        self.assertEqual(sorted(pair["health"]["dangling"]), ["alpha", "beta", "gamma"])
+        skills = self.call("skills", id=self.pair_id)["skills"]
+        self.assertEqual({item["status"] for item in skills}, {"dangling"})
+
+        result = self.call("sync", id=self.pair_id)
+        self.assertFalse(result["ok"], result)
+        self.assertIn("Không tìm thấy thư mục nguồn", result["error"])
+        self.assertTrue(os.path.lexists(self.target / "alpha"))
+
+    def test_config_backup_holds_the_previous_write(self):
+        config_path = self.root / "profile" / "SkillsJunction" / "pairs.json"
+        backup_path = config_path.with_name("pairs.json.bak")
+        self.assertTrue(config_path.is_file())
+
+        self.assertTrue(self.toggle("alpha", False)["ok"])
+        self.assertTrue(backup_path.is_file())
+        backup = json.loads(backup_path.read_text(encoding="utf-8"))
+        self.assertEqual(backup["version"], 1)
+        managed = [entry["name"] for entry in backup["pairs"][0]["managed"]]
+        current = json.loads(config_path.read_text(encoding="utf-8"))
+        current_managed = [entry["name"] for entry in current["pairs"][0]["managed"]]
+        self.assertIn("alpha", managed)
+        self.assertNotIn("alpha", current_managed)
+
 
 if __name__ == "__main__":
     unittest.main()

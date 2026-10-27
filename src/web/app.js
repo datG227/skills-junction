@@ -18,10 +18,12 @@
   })[char]);
 
   function summarizeSkills(items) {
-    const total = items.length;
-    const active = items.filter(item => typeof item.enabled === "boolean" ? item.enabled : /quản lý/.test(item.state || "")).length;
-    const kept = items.filter(item => item.status === "kept" || /giữ nguyên/.test(item.state || "")).length;
-    return { total, active, kept };
+    const dangling = items.filter(item => item.status === "dangling").length;
+    const sourceItems = items.filter(item => item.status !== "dangling");
+    const total = sourceItems.length;
+    const active = sourceItems.filter(item => typeof item.enabled === "boolean" ? item.enabled : /quản lý/.test(item.state || "")).length;
+    const kept = sourceItems.filter(item => item.status === "kept" || /giữ nguyên/.test(item.state || "")).length;
+    return { total, active, kept, dangling };
   }
 
   function request(action, fields = {}) {
@@ -75,13 +77,21 @@
 
   function renderCard(pair) {
     const info = skillInfo.get(pair.id);
-    const meta = info
+    const health = pair.health || {};
+    const dangling = Array.isArray(health.dangling) ? health.dangling.length : 0;
+    const healthChips =
+      (health.sourceMissing ? '<span class="meta-chip danger">Nguồn không tồn tại</span>' : "") +
+      (dangling ? `<span class="meta-chip warn">${dangling} link hỏng</span>` : "");
+    const meta = (info
       ? (info.total === 0
           ? '<span class="meta-chip">Thư mục nguồn rỗng</span>'
           : `<span class="meta-chip${info.active ? " on" : ""}">${info.active}/${info.total} skills</span>` +
             `<span class="mini-bar" aria-hidden="true"><span style="width:${Math.round((info.active / info.total) * 100)}%"></span></span>` +
             (info.kept ? `<span class="meta-chip warn">${info.kept} giữ nguyên</span>` : ""))
-      : '<span class="meta-chip">Đang đếm skills…</span>';
+      : '<span class="meta-chip">Đang đếm skills…</span>') + healthChips;
+    const syncTitle = health.sourceMissing
+      ? "Nguồn không tồn tại"
+      : (!pair.on ? "Bật cặp trước khi đồng bộ" : "Thêm Junction cho skill mới và kiểm tra link hỏng");
     const tools = path => `
       <div class="path-tools">
         ${renderCopyButton(path)}
@@ -95,6 +105,8 @@
             <span class="badge">${escapeHtml(pair.group || "Skills dùng chung")}</span>
           </div>
           <div class="pair-actions">
+            <button class="button quiet" data-action="sync" data-id="${escapeHtml(pair.id)}"
+              title="${escapeHtml(syncTitle)}" ${pair.on && !health.sourceMissing ? "" : "disabled"}>Đồng bộ</button>
             <button class="button quiet" data-action="skills" data-id="${escapeHtml(pair.id)}">Skills</button>
             <button class="button quiet" data-action="edit" data-id="${escapeHtml(pair.id)}">Sửa</button>
             <button class="button quiet icon danger" data-action="delete" data-id="${escapeHtml(pair.id)}" aria-label="Xóa cặp ${escapeHtml(pair.name)}">
@@ -147,7 +159,10 @@
       String(b.name ?? ""), "vi", { sensitivity: "base", numeric: true }
     ));
     const rows = sortedItems.map(item => {
-      return `<li class="skill-row"><span class="skill-name">${escapeHtml(item.name)}</span>
+      const badge = item.status === "dangling"
+        ? '<span class="meta-chip warn">Link hỏng</span>'
+        : item.status === "kept" ? '<span class="meta-chip warn">Giữ nguyên</span>' : "";
+      return `<li class="skill-row"><span class="skill-label"><span class="skill-name">${escapeHtml(item.name)}</span>${badge}</span>
         <div class="skill-actions">
           ${renderCopyButton(item.sourcePath, `Sao chép đường dẫn skill ${item.name}`)}
           <button class="switch" type="button" role="switch" aria-label="Junction skill ${escapeHtml(item.name)}"
@@ -156,10 +171,11 @@
         </div>
       </li>`;
     }).join("");
+    const sourceCount = items.filter(item => item.status !== "dangling").length;
     openDialog(`Skills · ${pair.name}`, `
       <div class="skills-context">
         <p class="dialog-copy">Nguồn: ${escapeHtml(pair.source)}</p>
-        <p class="skills-count">${items.length} skills · Sắp xếp A–Z</p>
+        <p class="skills-count">${sourceCount} skills · Sắp xếp A–Z</p>
       </div>
       <div class="skills-scroll" tabindex="0" role="region" aria-label="Danh sách Skills">
         ${items.length ? `<ul class="skill-list">${rows}</ul>` : '<p class="skills-empty dialog-copy">Không tìm thấy thư mục Skills con.</p>'}
@@ -167,7 +183,7 @@
       <p class="skills-copy-status" id="skills-copy-status" role="status" aria-live="polite" hidden></p>
       <p class="form-error skills-error" id="skills-error" role="alert" hidden></p>
       <div class="dialog-foot">
-        <p class="skills-note">Tắt: gỡ Junction riêng và ghi nhớ lựa chọn.<br>Công tắc mờ: mục này được giữ nguyên.</p>
+        <p class="skills-note">Tắt: gỡ Junction riêng và ghi nhớ lựa chọn.<br>Công tắc mờ: mục này được giữ nguyên.<br>Link hỏng: nguồn đã mất, cần xử lý thủ công.</p>
         <button class="button primary" type="button" data-action="close">Đóng</button>
       </div>`, "skills-dialog");
     skillsDialogPairId = pair.id;
@@ -264,6 +280,11 @@
       else if (action === "skills" && pair) {
         pendingSkillsPair = id;
         await request("skills", { id });
+      }
+      else if (action === "sync" && pair) {
+        button.disabled = true;
+        await request("sync", { id });
+        button.disabled = false;
       }
       else if (action === "toggle-skill" && pair) {
         const skill = button.dataset.skill;
