@@ -9,6 +9,7 @@ internal sealed class MainWindow : Form
     private const string Origin = "https://appassets.local/";
     private readonly Browser browser = new() { Dock = DockStyle.Fill };
     private BackendProcess? backend;
+    private AutoSync? autoSync;
     private bool closing;
 
     public MainWindow()
@@ -23,6 +24,7 @@ internal sealed class MainWindow : Form
         FormClosing += (_, _) =>
         {
             closing = true;
+            autoSync?.Dispose();
             backend?.Dispose();
             browser.Dispose();
         };
@@ -52,7 +54,12 @@ internal sealed class MainWindow : Form
             core.WebMessageReceived += ReceiveWebMessage;
 
             backend = new BackendProcess();
-            backend.MessageReceived += json => PostMessage(json);
+            autoSync = new AutoSync(backend);
+            backend.MessageReceived += json =>
+            {
+                autoSync?.Update(json);
+                PostMessage(json);
+            };
             backend.Stopped += () => PostMessage(JsonSerializer.Serialize(new
             {
                 requestId = "backend-exited",

@@ -89,9 +89,6 @@
             `<span class="mini-bar" aria-hidden="true"><span style="width:${Math.round((info.active / info.total) * 100)}%"></span></span>` +
             (info.kept ? `<span class="meta-chip warn">${info.kept} giữ nguyên</span>` : ""))
       : '<span class="meta-chip">Đang đếm skills…</span>') + healthChips;
-    const syncTitle = health.sourceMissing
-      ? "Nguồn không tồn tại"
-      : (!pair.on ? "Bật cặp trước khi đồng bộ" : "Thêm Junction cho skill mới và kiểm tra link hỏng");
     const tools = path => `
       <div class="path-tools">
         ${renderCopyButton(path)}
@@ -105,8 +102,6 @@
             <span class="badge">${escapeHtml(pair.group || "Skills dùng chung")}</span>
           </div>
           <div class="pair-actions">
-            <button class="button quiet" data-action="sync" data-id="${escapeHtml(pair.id)}"
-              title="${escapeHtml(syncTitle)}" ${pair.on && !health.sourceMissing ? "" : "disabled"}>Đồng bộ</button>
             <button class="button quiet" data-action="skills" data-id="${escapeHtml(pair.id)}">Skills</button>
             <button class="button quiet" data-action="edit" data-id="${escapeHtml(pair.id)}">Sửa</button>
             <button class="button quiet icon danger" data-action="delete" data-id="${escapeHtml(pair.id)}" aria-label="Xóa cặp ${escapeHtml(pair.name)}">
@@ -236,8 +231,8 @@
       else pending.reject(new Error(response.error || "Thao tác không thành công."));
     }
     if (Array.isArray(response.pairs)) setPairs(response.pairs);
-    if (response.message) setNotice(response.message, !response.ok);
-    if (response.error) setNotice(response.error, true);
+    if (response.message && !response.silent) setNotice(response.message, !response.ok);
+    if (response.error && !response.silent) setNotice(response.error, true);
     if (response.field && response.selectedPath) {
       const input = $(`[name="${CSS.escape(response.field)}"]`, dialogElement);
       if (input) input.value = response.selectedPath;
@@ -280,11 +275,6 @@
       else if (action === "skills" && pair) {
         pendingSkillsPair = id;
         await request("skills", { id });
-      }
-      else if (action === "sync" && pair) {
-        button.disabled = true;
-        await request("sync", { id });
-        button.disabled = false;
       }
       else if (action === "toggle-skill" && pair) {
         const skill = button.dataset.skill;

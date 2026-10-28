@@ -35,7 +35,7 @@ Nút copy cạnh mỗi công tắc sao chép đường dẫn đầy đủ tới 
 - **Tắt skill:** gỡ Junction do ứng dụng quản lý, giữ nguyên thư mục nguồn và ghi nhớ lựa chọn. Bật lại nhóm hoặc mở lại ứng dụng không tạo lại skill đã tắt.
 - **Bật skill:** cho phép tạo lại Junction riêng của skill đó khi nhóm được bật.
 - **Công tắc mờ:** mục ở đích đã có sẵn hoặc đã đổi nguồn; ứng dụng giữ nguyên mục đó.
-- **Đồng bộ:** thêm Junction cho skill mới xuất hiện ở nguồn mà không cần tắt rồi bật lại cặp. Nút chỉ hoạt động khi cặp đang bật; skill đã tắt và mục có sẵn ở đích được giữ nguyên. Cặp đang tắt không tự bật khi đồng bộ.
+- **Tự đồng bộ:** khi cặp đang bật, ứng dụng theo dõi thư mục nguồn và tự tạo Junction cho skill mới, kể cả thay đổi được thực hiện khi ứng dụng đang đóng. Skill đã tắt và mục có sẵn ở đích được giữ nguyên; cặp đang tắt không tự bật.
 - **Link hỏng / nguồn mất:** thẻ cảnh báo khi Junction trỏ tới thư mục nguồn đã bị xóa, hoặc khi không còn thư mục nguồn. Ứng dụng chỉ báo, không tự xóa các link này.
 
 Cấu hình được lưu ở `%LOCALAPPDATA%\SkillsJunction\pairs.json`; bản sao lưu của lần ghi trước nằm ở `pairs.json.bak` cùng thư mục. Nhật ký khởi động nằm ở `%LOCALAPPDATA%\SkillsJunction\WebView2.log`.

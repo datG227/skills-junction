@@ -320,7 +320,9 @@ function Enable-Pair($Pair, [string] $SkillName = '') {
             $skipped.Add("$($sourceInfo.Name) (lỗi: $($_.Exception.Message))")
         }
     }
-    Save-Pairs
+    # Managed entries are persisted as they are added; skip the extra write when
+    # nothing changed so automatic reconciles stay silent on disk.
+    if ($created.Count -gt 0) { Save-Pairs }
     if ($created.Count -eq 0 -and (Get-ActiveLinkCount $Pair) -eq 0 -and $skipped.Count -gt 0) {
         throw "Chưa tạo được Junction nào. Các mục trùng tên ở đích được giữ nguyên:`n• $($skipped -join "`n• ")"
     }
@@ -474,6 +476,7 @@ while ($script:BackendRunning) {
     $line = [Console]::In.ReadLine()
     if ($null -eq $line) { break }
     $requestId = ''
+    $silent = $false
     try {
         $request = $line | ConvertFrom-Json -ErrorAction Stop
         # Names may arrive mis-decoded from the host console; recover UTF-8 text.
@@ -482,7 +485,9 @@ while ($script:BackendRunning) {
             if ($property) { $request.$field = Repair-Text ([string]$request.$field) }
         }
         $requestId = [string]$request.requestId
+        $silent = $request.silent -eq $true
         $response = [ordered]@{ requestId = $requestId; ok = $true }
+        if ($silent) { $response.silent = $true }
         switch ([string]$request.action) {
             'load' { $response.pairs = @(Get-PublicPairs) }
             'browse' {
@@ -594,6 +599,7 @@ while ($script:BackendRunning) {
         }
     } catch {
         $response = [ordered]@{ requestId = $requestId; ok = $false; error = $_.Exception.Message }
+        if ($silent) { $response.silent = $true }
     }
     $json = ConvertTo-Json -InputObject $response -Depth 12 -Compress
     # Emit pure-ASCII JSON (standard \uXXXX escapes) so any console codepage

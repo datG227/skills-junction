@@ -15,7 +15,7 @@ Kết quả ở `artifacts/publish`: EXE/DLL của host, thư mục `web`, `back
 
 ## Cấu trúc và nguồn gốc
 
-`MainWindow` sở hữu cửa sổ và WebView2. `BackendProcess` sở hữu tiến trình PowerShell, truyền JSON theo từng dòng qua stdin/stdout và đóng tiến trình khi cửa sổ đóng. `AppPaths` quản lý đường dẫn ứng dụng và hồ sơ `%LOCALAPPDATA%\SkillsJunction`.
+`MainWindow` sở hữu cửa sổ và WebView2. `BackendProcess` sở hữu tiến trình PowerShell, truyền JSON theo từng dòng qua stdin/stdout và đóng tiến trình khi cửa sổ đóng. `AutoSync` theo dõi thư mục nguồn của các cặp đang bật và gửi yêu cầu `sync` im lặng khi có thư mục skill mới hoặc bị xóa. `AppPaths` quản lý đường dẫn ứng dụng và hồ sơ `%LOCALAPPDATA%\SkillsJunction`.
 
 WebView2 chỉ ánh xạ thư mục `web` vào `https://appassets.local/`. Backend được gọi qua thông điệp JSON, không được phục vụ như tài nguyên web. Backend và giao diện giữ nguyên giao thức, cấu hình và hành vi Junction hiện có.
 
